@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from arl_trp.environment.observation import ObservationNormalizer
 from arl_trp.domain.market import MarketSnapshot
 from arl_trp.domain.order import Action
 from arl_trp.environment.trading_env import TradingEnvironment
@@ -45,6 +46,7 @@ def make_market_data():
 
     return data
 
+
 def make_long_market_data(length=502):
     """
     Create a deterministic market sequence long enough
@@ -73,6 +75,87 @@ def make_long_market_data(length=502):
 
     return data
 
+
+def make_test_normalizer():
+    """
+    Create a deterministic fitted normalizer for tests.
+
+    This is test-only normalization data.
+
+    Production normalization statistics must come from the
+    training-fold pipeline and must never be fitted inside
+    TradingEnvironment.
+    """
+
+    observations = np.array(
+        [
+            [
+                0.00,
+                0.01,
+                -0.01,
+                0.00,
+                0.01,
+                100.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            ],
+            [
+                0.00,
+                0.01,
+                -0.01,
+                0.01,
+                0.01,
+                110.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            ],
+            [
+                0.00,
+                0.01,
+                -0.01,
+                0.02,
+                0.01,
+                120.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            ],
+        ],
+        dtype=np.float32,
+    )
+
+    return ObservationNormalizer().fit(observations)
+
+
+def make_environment(
+    initial_balance=10_000.0,
+    commission=0.0,
+    slippage=0.0,
+):
+    execution = ExecutionSimulator(
+        ExecutionConfig(
+            slippage=slippage,
+            commission_per_unit=commission,
+        )
+    )
+
+    env = TradingEnvironment(
+        market_data=make_market_data(),
+        initial_balance=initial_balance,
+        execution=execution,
+        quantity=1.0,
+    )
+
+    env.set_observation_normalizer(make_test_normalizer())
+
+    return env
+
+
 def test_environment_reset_resets_reward_estimator():
     execution = ExecutionSimulator(
         ExecutionConfig()
@@ -84,6 +167,8 @@ def test_environment_reset_resets_reward_estimator():
         execution=execution,
         quantity=1.0,
     )
+
+    env.set_observation_normalizer(make_test_normalizer())
 
     env.reset()
 
@@ -112,25 +197,6 @@ def test_environment_reset_resets_reward_estimator():
         == 0.0
     )
 
-def make_environment(
-    initial_balance=10_000.0,
-    commission=0.0,
-    slippage=0.0,
-):
-    execution = ExecutionSimulator(
-        ExecutionConfig(
-            slippage=slippage,
-            commission_per_unit=commission,
-        )
-    )
-
-    return TradingEnvironment(
-        market_data=make_market_data(),
-        initial_balance=initial_balance,
-        execution=execution,
-        quantity=1.0,
-    )
-
 
 def test_reset_starts_flat():
     env = make_environment()
@@ -141,7 +207,7 @@ def test_reset_starts_flat():
     assert env.position.is_flat
     assert env.accounting.balance == 10_000.0
     assert env.accounting.peak_equity == 10_000.0
-    assert observation.shape == (12,)
+    assert observation.shape == (10,)
 
 
 def test_long_opens_at_ask():
@@ -437,6 +503,7 @@ def test_environment_is_deterministic():
         assert trunc1 == trunc2
         assert transition1 == transition2
 
+
 def test_reward_burn_in_activates_after_500_observations():
     execution = ExecutionSimulator(
         ExecutionConfig()
@@ -448,6 +515,8 @@ def test_reward_burn_in_activates_after_500_observations():
         execution=execution,
         quantity=1.0,
     )
+
+    env.set_observation_normalizer(make_test_normalizer())
 
     env.reset()
 

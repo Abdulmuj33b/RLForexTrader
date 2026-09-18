@@ -1,3 +1,8 @@
+from arl_trp.environment.observation import (
+    ObservationBuffer,
+    ObservationNormalizer,
+    StateEncoder,
+)
 from typing import Sequence
 
 import numpy as np
@@ -29,6 +34,17 @@ class TradingEnvironment:
     Opposite-direction actions close the existing position.
     They do not immediately reverse the position.
     """
+
+    def set_observation_normalizer(
+        self,
+        normalizer: ObservationNormalizer,
+    ) -> None:
+        if not normalizer.is_fitted:
+            raise RuntimeError(
+            "ObservationNormalizer must be fitted before use"
+            )
+
+        self.observation_normalizer = normalizer
 
     def __init__(
         self,
@@ -68,6 +84,18 @@ class TradingEnvironment:
             beta=reward_beta
         )
 
+        self.state_encoder = StateEncoder(
+            initial_balance=initial_balance
+        )
+
+        self.observation_normalizer: ObservationNormalizer | None = None
+
+        self.observation_buffer = ObservationBuffer(
+            window_size=64,
+            feature_count=10,
+        )
+
+        self.previous_close = self.market_data[0].close
         self.index = 0
         self.previous_equity = initial_balance
 
@@ -77,50 +105,51 @@ class TradingEnvironment:
         self.index = 0
         self.position = Position()
         self.accounting.reset()
-
         self.reward.reset()
 
         self.previous_equity = self.initial_balance
+
+        self.previous_close = self.market_data[0].close
+
+        self.observation_buffer.reset()
 
         return self._observation()
 
     def _observation(self) -> np.ndarray:
         """
-        Return the current observation.
+        Encode, normalize, and buffer the current market observation.
 
-        This is intentionally simple for v0.1.
-        A versioned StateEncoder will replace this later.
+        During warm-up:
+            returns the current normalized 10-feature vector.
+
+        Once the buffer contains 64 observations:
+            returns the chronological (64, 10) observation window.
         """
+
+        if self.observation_normalizer is None:
+            raise RuntimeError(
+                "ObservationNormalizer must be set before generating observations"
+            )
 
         market = self.market_data[self.index]
 
-        equity = self.accounting.equity(
-            self.position,
-            market,
+        raw_observation = self.state_encoder.encode(
+            market=market,
+            previous_close=self.previous_close,
+            position=self.position,
+            accounting=self.accounting,
         )
 
-        drawdown = self.accounting.drawdown(
-            self.position,
-            market,
-        )
+        normalized_observation = self.observation_normalizer.transform(
+            raw_observation.reshape(1, -1)
+        )[0]
 
-        return np.array(
-            [
-                market.open,
-                market.high,
-                market.low,
-                market.close,
-                market.volume,
-                market.bid,
-                market.ask,
-                market.spread,
-                self.position.quantity,
-                self.position.entry_price,
-                equity,
-                drawdown,
-            ],
-            dtype=np.float32,
-        )
+        self.observation_buffer.append(normalized_observation)
+
+        if self.observation_buffer.is_ready:
+            return self.observation_buffer.get()
+
+        return normalized_observation.copy()
 
     def _close_position(
         self,
@@ -293,6 +322,8 @@ class TradingEnvironment:
 
         next_market = self.market_data[self.index]
 
+        previous_close = market.close
+
         equity_after = self.accounting.equity(
             self.position,
             next_market,
@@ -332,6 +363,8 @@ class TradingEnvironment:
             ),
             "equity": equity_after,
         }
+
+        self.previous_close = previous_close
 
         return (
             self._observation(),
