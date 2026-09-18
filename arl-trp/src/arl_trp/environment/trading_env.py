@@ -53,6 +53,7 @@ class TradingEnvironment:
         execution: ExecutionSimulator,
         quantity: float = 1.0,
         reward_beta: float = 0.5,
+        observation_window: int = 1,
     ):
         if not market_data:
             raise ValueError(
@@ -68,12 +69,16 @@ class TradingEnvironment:
             raise ValueError(
                 "quantity must be positive"
             )
+        if observation_window <= 0:
+            raise ValueError(
+                "observation_window must be positive"
+            )
 
         self.market_data = list(market_data)
         self.initial_balance = initial_balance
         self.execution = execution
         self.quantity = quantity
-
+        self.observation_window = observation_window
         self.position = Position()
 
         self.accounting = PortfolioAccounting(
@@ -91,7 +96,7 @@ class TradingEnvironment:
         self.observation_normalizer: ObservationNormalizer | None = None
 
         self.observation_buffer = ObservationBuffer(
-            window_size=64,
+            window_size=observation_window,
             feature_count=10,
         )
 
@@ -100,7 +105,22 @@ class TradingEnvironment:
         self.previous_equity = initial_balance
 
     def reset(self):
-        """Reset the environment to the beginning."""
+        """
+        Reset the environment to the beginning of a valid
+        observation window.
+
+        For observation_window=N, the first decision occurs
+        at market index N-1.
+
+        The observation returned by reset() therefore always
+        has shape (N, 10).
+        """
+
+        if len(self.market_data) < self.observation_window:
+            raise ValueError(
+                "market_data must contain at least "
+                f"{self.observation_window} observations"
+            )
 
         self.index = 0
         self.position = Position()
@@ -113,7 +133,23 @@ class TradingEnvironment:
 
         self.observation_buffer.reset()
 
-        return self._observation()
+        # Build the initial observation window without
+        # executing any actions or changing portfolio state.
+        for index in range(self.observation_window):
+            self.index = index
+
+            self._observation()
+
+            self.previous_close = (
+                self.market_data[index].close
+            )
+
+        observation = self.observation_buffer.get()
+
+        if self.observation_window == 1:
+            return observation[0]
+
+        return observation
 
     def _observation(self) -> np.ndarray:
         """
