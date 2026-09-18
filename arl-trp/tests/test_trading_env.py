@@ -45,6 +45,72 @@ def make_market_data():
 
     return data
 
+def make_long_market_data(length=502):
+    """
+    Create a deterministic market sequence long enough
+    to cross the 500-observation reward burn-in boundary.
+    """
+
+    data = []
+
+    for i in range(length):
+        bid = 100.0 + i
+        ask = bid + 1.0
+
+        data.append(
+            MarketSnapshot(
+                timestamp=datetime(2026, 1, 1)
+                + timedelta(minutes=i),
+                open=bid,
+                high=ask,
+                low=bid - 1.0,
+                close=bid + 0.5,
+                volume=1000.0,
+                bid=bid,
+                ask=ask,
+            )
+        )
+
+    return data
+
+def test_environment_reset_resets_reward_estimator():
+    execution = ExecutionSimulator(
+        ExecutionConfig()
+    )
+
+    env = TradingEnvironment(
+        market_data=make_long_market_data(),
+        initial_balance=10_000.0,
+        execution=execution,
+        quantity=1.0,
+    )
+
+    env.reset()
+
+    for _ in range(10):
+        env.step(Action.HOLD)
+
+    assert (
+        env.reward.differential_sharpe.count
+        == 10
+    )
+
+    env.reset()
+
+    assert (
+        env.reward.differential_sharpe.count
+        == 0
+    )
+
+    assert (
+        env.reward.differential_sharpe.mean
+        == 0.0
+    )
+
+    assert (
+        env.reward.differential_sharpe.variance
+        == 0.0
+    )
 
 def make_environment(
     initial_balance=10_000.0,
@@ -370,3 +436,54 @@ def test_environment_is_deterministic():
         assert term1 == term2
         assert trunc1 == trunc2
         assert transition1 == transition2
+
+def test_reward_burn_in_activates_after_500_observations():
+    execution = ExecutionSimulator(
+        ExecutionConfig()
+    )
+
+    env = TradingEnvironment(
+        market_data=make_long_market_data(),
+        initial_balance=10_000.0,
+        execution=execution,
+        quantity=1.0,
+    )
+
+    env.reset()
+
+    # Open a long position.
+    env.step(Action.LONG)
+
+    # The first reward observation has already been consumed.
+    assert env.reward.differential_sharpe.count == 1
+
+    # Consume observations 2 through 499.
+    for _ in range(498):
+        env.step(Action.HOLD)
+
+    assert (
+        env.reward.differential_sharpe.count
+        == 499
+    )
+
+    # Observation 500 is where the differential-Sharpe
+    # component becomes active.
+    _, reward, _, _, info = env.step(
+        Action.HOLD
+    )
+
+    transition = info["transition"]
+
+    economic_reward = (
+        transition.equity_after
+        - transition.equity_before
+    )
+
+    assert (
+        env.reward.differential_sharpe.count
+        == 500
+    )
+
+    assert reward != pytest.approx(
+        economic_reward
+    )

@@ -8,14 +8,16 @@ from arl_trp.domain.position import Position
 from arl_trp.domain.transition import TradeTransition
 from arl_trp.execution.simulator import ExecutionSimulator
 from arl_trp.portfolio.accounting import PortfolioAccounting
-from arl_trp.rewards.economic import EconomicReward
+from arl_trp.rewards.combined import CombinedReward
 
 
 class TradingEnvironment:
     """
     Minimal deterministic trading environment for ARL-TRP v0.1.
 
-    The environment provides market mechanics and accounting.
+    The environment provides market mechanics, accounting,
+    and reward calculation.
+
     It does NOT contain a trading strategy.
 
     Supported actions:
@@ -34,9 +36,12 @@ class TradingEnvironment:
         initial_balance: float,
         execution: ExecutionSimulator,
         quantity: float = 1.0,
+        reward_beta: float = 0.5,
     ):
         if not market_data:
-            raise ValueError("market_data cannot be empty")
+            raise ValueError(
+                "market_data cannot be empty"
+            )
 
         if initial_balance <= 0.0:
             raise ValueError(
@@ -59,6 +64,10 @@ class TradingEnvironment:
             initial_balance=initial_balance
         )
 
+        self.reward = CombinedReward(
+            beta=reward_beta
+        )
+
         self.index = 0
         self.previous_equity = initial_balance
 
@@ -68,6 +77,8 @@ class TradingEnvironment:
         self.index = 0
         self.position = Position()
         self.accounting.reset()
+
+        self.reward.reset()
 
         self.previous_equity = self.initial_balance
 
@@ -287,7 +298,7 @@ class TradingEnvironment:
             next_market,
         )
 
-        reward = EconomicReward.calculate(
+        reward = self.reward.calculate(
             equity_before,
             equity_after,
         )
