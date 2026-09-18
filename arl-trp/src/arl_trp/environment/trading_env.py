@@ -4,7 +4,8 @@ from arl_trp.environment.observation import (
     StateEncoder,
 )
 from typing import Sequence
-
+import gymnasium
+from gymnasium import spaces
 import numpy as np
 
 from arl_trp.domain.market import MarketSnapshot
@@ -16,7 +17,7 @@ from arl_trp.portfolio.accounting import PortfolioAccounting
 from arl_trp.rewards.combined import CombinedReward
 
 
-class TradingEnvironment:
+class TradingEnvironment(gymnasium.Env):
     """
     Minimal deterministic trading environment for ARL-TRP v0.1.
 
@@ -53,7 +54,7 @@ class TradingEnvironment:
         execution: ExecutionSimulator,
         quantity: float = 1.0,
         reward_beta: float = 0.5,
-        observation_window: int = 1,
+        observation_window: int = 64,
     ):
         if not market_data:
             raise ValueError(
@@ -74,6 +75,14 @@ class TradingEnvironment:
                 "observation_window must be positive"
             )
 
+        self.action_space = spaces.Discrete(4)
+
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(observation_window, 10),
+            dtype=np.float32,
+        )
         self.market_data = list(market_data)
         self.initial_balance = initial_balance
         self.execution = execution
@@ -104,7 +113,7 @@ class TradingEnvironment:
         self.index = 0
         self.previous_equity = initial_balance
 
-    def reset(self):
+    def reset(self, *, seed=None, options=None):
         """
         Reset the environment to the beginning of a valid
         observation window.
@@ -115,6 +124,7 @@ class TradingEnvironment:
         The observation returned by reset() therefore always
         has shape (N, 10).
         """
+        super().reset(seed=seed)
 
         if len(self.market_data) < self.observation_window:
             raise ValueError(
@@ -147,9 +157,9 @@ class TradingEnvironment:
         observation = self.observation_buffer.get()
 
         if self.observation_window == 1:
-            return observation[0]
+            observation = observation[0]
 
-        return observation
+        return observation, {}
 
     def _observation(self) -> np.ndarray:
         """
