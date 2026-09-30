@@ -93,7 +93,7 @@ def test_environment_accepts_observation_normalizer():
 def test_reset_starts_at_first_valid_decision_bar():
     env = make_environment()
 
-    observation = env.reset()
+    observation, _ = env.reset()
 
     assert env.index == 63
     assert observation.shape == (64, 10)
@@ -102,7 +102,7 @@ def test_reset_starts_at_first_valid_decision_bar():
 def test_reset_initializes_full_observation_buffer():
     env = make_environment()
 
-    observation = env.reset()
+    observation, _ = env.reset()
 
     assert len(env.observation_buffer) == 64
     assert env.observation_buffer.is_ready is True
@@ -112,7 +112,7 @@ def test_reset_initializes_full_observation_buffer():
 def test_reset_observation_contains_exactly_first_64_bars():
     env = make_environment()
 
-    observation = env.reset()
+    observation, _ = env.reset()
 
     expected = np.array(
         [
@@ -184,7 +184,7 @@ def test_observation_does_not_use_future_bars():
 
     env = make_environment(market_data)
 
-    observation = env.reset()
+    observation, _ = env.reset()
 
     assert env.index == 63
     assert len(observation) == 64
@@ -206,12 +206,12 @@ def test_dataset_shorter_than_observation_window_is_rejected():
 def test_reset_rebuilds_same_initial_observation():
     env = make_environment()
 
-    first_observation = env.reset()
+    first_observation, _ = env.reset()
 
     env.step(Action.HOLD)
     env.step(Action.HOLD)
 
-    second_observation = env.reset()
+    second_observation, _ = env.reset()
 
     assert env.index == 63
     assert np.array_equal(
@@ -278,8 +278,8 @@ def test_environment_observation_is_deterministic():
     env1 = make_environment()
     env2 = make_environment()
 
-    observation1 = env1.reset()
-    observation2 = env2.reset()
+    observation1, _ = env1.reset()
+    observation2, _ = env2.reset()
 
     assert np.array_equal(
         observation1,

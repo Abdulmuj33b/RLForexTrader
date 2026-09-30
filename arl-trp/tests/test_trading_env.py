@@ -149,6 +149,8 @@ def make_environment(
         initial_balance=initial_balance,
         execution=execution,
         quantity=1.0,
+        reward_beta=0.0,
+        observation_window=1,
     )
 
     env.set_observation_normalizer(make_test_normalizer())
@@ -201,7 +203,7 @@ def test_environment_reset_resets_reward_estimator():
 def test_reset_starts_flat():
     env = make_environment()
 
-    observation = env.reset()
+    observation, _ = env.reset()
 
     assert env.index == 0
     assert env.position.is_flat
