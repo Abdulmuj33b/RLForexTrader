@@ -1,0 +1,29 @@
+[algorithm]
+name = "PPO"
+version = "0.1"
+
+[observation]
+window = 64
+features = 10
+shape = [64, 10]
+
+[feature_extractor]
+type = "trading_mlp"
+hidden_dim = 256
+output_dim = 128
+
+[ppo]
+learning_rate = 0.0003
+n_steps = 2048
+batch_size = 64
+n_epochs = 10
+gamma = 0.99
+gae_lambda = 0.95
+clip_range = 0.2
+ent_coef = 0.0
+vf_coef = 0.5
+max_grad_norm = 0.5
+
+[reproducibility]
+seed = 42
+device = "cpu"
